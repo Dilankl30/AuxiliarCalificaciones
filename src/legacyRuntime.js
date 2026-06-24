@@ -210,13 +210,11 @@ export function initLegacyRuntime() {
   var STATE = {};
   window.STATE = STATE; // window.STATE y STATE apuntan al mismo objeto
   var CAREER_RACS = [];
-  var STORAGE_KEY = 'espoch_state_v1';
   var dbPushTimer = null;
   // No se empuja a la BD hasta haber HIDRATADO primero. Evita que un guardado
   // temprano (con el estado aún vacío) sobrescriba/borre datos en la BD.
   var dbReady = false;
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch { /* almacenamiento no disponible */ }
     pushToDb();
   }
 
@@ -252,97 +250,58 @@ export function initLegacyRuntime() {
       payload.docentes = STATE.docentes;
       payload.teacherAssignments = STATE.teacherAssignments;
     }
-    try { await oasis.putStore(payload); } catch { /* sin BD: queda el respaldo en localStorage */ }
+    try { await oasis.putStore(payload); } catch { /* sin conexión: no se guarda */ }
   }
-
-  // Fallback: si Supabase no está disponible, cargar datos académicos desde localStorage
-  function fallbackLoad() {
-    try {
-      var stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return;
-      var parsed = JSON.parse(stored);
-      if (parsed.savedConfigs) STATE.savedConfigs = parsed.savedConfigs;
-      if (parsed.teacherAssignments) STATE.teacherAssignments = parsed.teacherAssignments;
-      if (parsed.docentes) STATE.docentes = parsed.docentes;
-      if (parsed.studentsByConfig) STATE.studentsByConfig = parsed.studentsByConfig;
-      if (parsed.gradesByConfig) STATE.gradesByConfig = parsed.gradesByConfig;
-      if (parsed.students) STATE.students = parsed.students;
-      if (parsed.grades) STATE.grades = parsed.grades;
-      if (parsed.recentActivity) STATE.recentActivity = parsed.recentActivity;
-      if (parsed.activeConfigId) STATE.activeConfigId = parsed.activeConfigId;
-    } catch { /* no hay respaldo local */ }
-  }
-
-  // Trae los datos persistidos y los fusiona en el estado local.
   async function hydrateFromDb() {
     var u = STATE.currentUser;
     if (!u) { dbReady = true; return; }
     var store;
-    try { store = await oasis.getStore({ email: u.email, role: u.role }); } catch { dbReady = true; fallbackLoad(); return; }
-    if (!store) { dbReady = true; fallbackLoad(); return; }
-    if (store.disabled) { dbReady = true; fallbackLoad(); return; }
-    // Docentes (global). Conservamos contraseñas locales de esta sesión si existen.
+    try { store = await oasis.getStore({ email: u.email, role: u.role }); } catch { dbReady = true; return; }
+    if (!store) { dbReady = true; return; }
+    if (store.disabled) { dbReady = true; return; }
     if (Array.isArray(store.docentes) && store.docentes.length > 0) {
       var byEmail = {};
       (STATE.docentes || []).forEach(function (d) { byEmail[d.email] = d; });
       STATE.docentes = store.docentes.map(function (d) {
         var local = byEmail[d.email];
+        var pw = (local && local.password) || '';
+        if (!pw && d.password_set) pw = 'saved';
         return {
           email: d.email, nombre: d.nombre, name: d.nombre, cedula: d.cedula || '',
           role: d.rol || 'docente', rol: d.rol || 'docente',
-          password: (local && local.password) || ''
+          password: pw
         };
       });
     }
     if (Array.isArray(store.teacherAssignments) && store.teacherAssignments.length > 0)
       STATE.teacherAssignments = store.teacherAssignments;
     if (Array.isArray(store.savedConfigs) && store.savedConfigs.length > 0) {
-      // Fusiona configs de la BD con las locales: las de la BD son autoritativas,
-      // pero conservamos las locales que aún no están en la BD (nunca se borran).
-      var dbById = {};
-      store.savedConfigs.forEach(function (c) { dbById[c.id] = c; });
-      var merged = store.savedConfigs.slice();
-      (STATE.savedConfigs || []).forEach(function (c) {
-        if (!dbById[c.id]) merged.push(c);
-      });
-      STATE.savedConfigs = merged;
+      STATE.savedConfigs = store.savedConfigs;
     }
     if (store.studentsByConfig && Object.keys(store.studentsByConfig).length > 0)
-      STATE.studentsByConfig = Object.assign({}, STATE.studentsByConfig, store.studentsByConfig);
+      STATE.studentsByConfig = store.studentsByConfig;
     if (store.gradesByConfig && Object.keys(store.gradesByConfig).length > 0)
-      STATE.gradesByConfig = Object.assign({}, STATE.gradesByConfig, store.gradesByConfig);
-    // Si Supabase está conectado pero vacío, cargar respaldo local
-    if ((!store.docentes || store.docentes.length === 0) &&
-        (!store.teacherAssignments || store.teacherAssignments.length === 0) &&
-        (!store.savedConfigs || store.savedConfigs.length === 0)) {
-      fallbackLoad();
-    }
+      STATE.gradesByConfig = store.gradesByConfig;
     if (STATE.activeConfigId) {
       cargarPaoActivo();
     }
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(STATE)); } catch { /* noop */ }
     rerenderActive();
     dbReady = true;
   }
 
   function rerenderActive() {
     updateSidebar();
-    var active = document.querySelector('.page.active');
-    if (!active) return;
-    var id = active.id.replace('page-', '');
-    if (id.indexOf('coord-') === 0 || id === 'coordinacion') renderPage(id === 'coordinacion' ? 'coordinacion' : id);
-    else renderPage(id);
+    var page = STATE.currentPage;
+    if (!page) {
+      var active = document.querySelector('.page.active');
+      if (!active) return;
+      page = active.id.replace('page-', '');
+    }
+    renderPage(page);
   }
   function load() {
-    try {
-      var stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) { STATE = JSON.parse(JSON.stringify(DEFAULT_STATE)); window.STATE = STATE; return; }
-      var parsed = JSON.parse(stored);
-      // Solo restaurar currentUser (sesión); datos académicos vienen de Supabase
-      STATE = JSON.parse(JSON.stringify(DEFAULT_STATE));
-      if (parsed.currentUser) STATE.currentUser = parsed.currentUser;
-      window.STATE = STATE;
-    } catch { STATE = JSON.parse(JSON.stringify(DEFAULT_STATE)); window.STATE = STATE; }
+    STATE = JSON.parse(JSON.stringify(DEFAULT_STATE));
+    window.STATE = STATE;
   }
   load();
 
@@ -365,7 +324,6 @@ export function initLegacyRuntime() {
     STATE.studentsByConfig[key] = JSON.parse(JSON.stringify(STATE.students));
     STATE.gradesByConfig[key] = JSON.parse(JSON.stringify(STATE.grades));
   }
-  // Solo cargar datos si hay un PAO activo previamente seleccionado (persistido en localStorage)
   if (STATE.activeConfigId) loadActiveConfigData();
 
   // ================================================================
@@ -573,11 +531,12 @@ export function initLegacyRuntime() {
       container.innerHTML = '';
       return;
     }
+    var isCoord = STATE.currentUser && STATE.currentUser.role === 'coordinador';
     var configs = (STATE.savedConfigs || []).filter(function (c) {
-      return (c.ownerEmail || '') === email;
+      return isCoord || (c.ownerEmail || '') === email;
     });
     if (configs.length === 0) {
-      container.innerHTML = '<div class="pao-sidebar-empty">No existen PAOs configurados.<br>Cree uno desde Configuración.</div>';
+      container.innerHTML = '<div class="pao-sidebar-empty">No existen PAOs configurados.<br>Cree uno desde Configuraci\u00f3n.</div>';
       return;
     }
     var sorted = configs.slice().sort(function (a, b) {
@@ -746,7 +705,7 @@ export function initLegacyRuntime() {
     if (msgEl) msgEl.textContent = '';
     applyRoleUI();
     updateSidebar();
-    navigate(user.role === 'coordinador' ? 'coord-docentes' : 'dashboard');
+    navigate(user.role === 'coordinador' ? 'coord-asignaturas' : 'dashboard');
     showToast('Bienvenido, ' + user.name, 'success');
     autoLoadPeriodo();
     hydrateFromDb(); // trae datos persistidos (configs, notas, asignaciones)
@@ -776,12 +735,7 @@ export function initLegacyRuntime() {
     if (local) { finishLogin(local); return; }
     setAuthLoading(true);
     try {
-      // 2) Dev/test login (cuentas empiezan con "dev." - bypass OASIS).
-      if (email.indexOf('dev.') === 0) {
-        var devResult = await oasis.devLogin(email, pass);
-        if (devResult) { finishLogin(buildUserFromOasis(email, devResult)); return; }
-      }
-      // 3) Login contra la base de datos (docentes creados por el coordinador, otra PC).
+      // 2) Login contra la base de datos (docentes creados por el coordinador, otra PC).
       try {
         var dbUser = await oasis.loginDb(email, pass);
         if (dbUser && !dbUser.disabled) { finishLogin(dbUser); return; }
@@ -1721,6 +1675,15 @@ export function initLegacyRuntime() {
   }
   function setGrade(sid, aid, score) {
     GradeService.setGrade(STATE.activeConfigId, sid, aid, score);
+    var found = false;
+    for (var i = 0; i < STATE.grades.length; i++) {
+      if (STATE.grades[i].studentId === sid && STATE.grades[i].activityId === aid) {
+        STATE.grades[i].score = score;
+        found = true;
+        break;
+      }
+    }
+    if (!found && score != null) STATE.grades.push({ studentId: sid, activityId: aid, score: score });
     persistActiveConfigData();
   }
   function studentTotal(sid) {
@@ -3085,11 +3048,12 @@ export function initLegacyRuntime() {
     var careerOptions = Object.keys(DB_ESPOCH).map(function (c) { return '<option value="' + c + '">' + c + '</option>'; }).join('');
     openModal('Importar docentes desde OASIS',
       '<p style="color:var(--gray-600);font-size:.8rem;margin-bottom:12px">Trae los docentes que dictan en la carrera con sus <strong>cargas horarias</strong> (materia · nivel · paralelo) desde OASIS y les crea un perfil de acceso.</p>' +
+      '<p style="color:var(--gray-600);font-size:.8rem;margin-bottom:12px">Los docentes <strong>nuevos</strong> recibirán como contraseña su número de cédula. Los docentes ya existentes conservan su contraseña actual.</p>' +
       '<div class="form-group"><label class="form-label">Carrera</label><select class="form-select" id="coord-import-career"><option value="">Seleccione carrera</option>' + careerOptions + '</select></div>' +
       '<div id="coord-import-msg" style="font-size:.78rem;color:var(--gray-500);min-height:18px"></div>',
       [
         { label: 'Cancelar', cls: 'btn-ghost', action: 'close' },
-        { label: 'Importar', cls: 'btn-success', action: doCoordImportDocentes }
+        { label: 'Importar / Actualizar', cls: 'btn-success', action: doCoordImportDocentes }
       ]);
   }
 
@@ -3118,8 +3082,8 @@ export function initLegacyRuntime() {
         var email = (d.email && /@/.test(d.email) && !/^null$/i.test(d.email)) ? d.email.toLowerCase() : (cedNum + '@espoch.edu.ec');
         var existente = findUserByEmail(email);
         if (!existente) {
-          // Sin contraseña: el coordinador debe asignarla antes de que el docente ingrese.
-          STATE.docentes.push({ email: email, password: '', role: 'docente', name: nombre, cedula: d.cedula });
+          // Contraseña inicial = número de cédula (el docente puede cambiarla después).
+          STATE.docentes.push({ email: email, password: cedNum, role: 'docente', name: nombre, cedula: d.cedula });
           nuevosDoc++;
         }
         (d.cargas || []).forEach(function (carga) {
@@ -3172,13 +3136,14 @@ export function initLegacyRuntime() {
         var claveBadge = d.password
           ? '<span class="badge badge-green">Con clave</span>'
           : '<span class="badge badge-amber">Sin clave</span>';
+        var claveBtnText = d.password ? 'Cambiar contraseña' : 'Asignar contraseña';
         return '<div class="item-row" style="align-items:flex-start;flex-wrap:wrap">' +
           '<div style="font-size:.8rem;flex:1;min-width:220px"><strong>' + d.name + '</strong> ' + rolTag + claveBadge +
           '<div style="font-size:.7rem;color:var(--gray-500)">' + d.email + (d.cedula ? ' · ' + d.cedula : '') + '</div>' +
           '<div style="margin-top:6px">' + asigHtml + '</div></div>' +
           '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
           '<button class="btn btn-ghost btn-sm" onclick="coordVerHorario(\'' + d.email + '\')">Ver horario</button>' +
-          '<button class="btn btn-edit btn-sm" onclick="coordSetDocentePassword(\'' + d.email + '\')">Asignar contraseña</button>' +
+          '<button class="btn btn-edit btn-sm" onclick="coordSetDocentePassword(\'' + d.email + '\')">' + claveBtnText + '</button>' +
           '</div></div>';
       }).join(''));
   }
@@ -3242,17 +3207,19 @@ export function initLegacyRuntime() {
   function coordSetDocentePassword(email) {
     var d = findUserByEmail(email);
     if (!d) return;
-    openModal('Asignar contraseña — ' + d.name,
+    var titulo = d.password ? 'Cambiar contraseña — ' : 'Asignar contraseña — ';
+    openModal(titulo + d.name,
       '<p style="color:var(--gray-600);font-size:.8rem;margin-bottom:10px">El docente ingresará con <strong>' + d.email + '</strong> y esta contraseña.</p>' +
       '<div class="form-group"><label class="form-label">Nueva contraseña</label><input class="form-input" id="coord-set-pass" type="text" placeholder="Contraseña para el docente"></div>',
       [{ label: 'Cancelar', cls: 'btn-ghost', action: 'close' }, { label: 'Guardar', cls: 'btn-success', action: function () {
         var pass = document.getElementById('coord-set-pass').value.trim();
         if (!pass) { showToast('Ingrese una contraseña.', 'error'); return; }
+        var esCambio = !!d.password;
         d.password = pass;
         save();
         closeModal();
         renderCoordinacion('asignaturas');
-        showToast('Contraseña asignada a ' + d.name, 'success');
+        showToast('Contraseña ' + (esCambio ? 'cambiada' : 'asignada') + ' a ' + d.name, 'success');
       }}]);
   }
 

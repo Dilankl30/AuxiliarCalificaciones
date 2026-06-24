@@ -96,6 +96,7 @@ export async function getStore({ email, role } = {}) {
         nombre: d.nombres || "",
         cedula: d.cedula || "",
         rol: d.rol || "docente",
+        password_set: !!(d.password_hash),
       }));
   }
 
@@ -229,7 +230,7 @@ export async function getStore({ email, role } = {}) {
     for (const cfgId of configIds) {
       const ests = estudiantes.filter((e) => e.config_id === cfgId);
       result.studentsByConfig[cfgId] = ests.map((e) => ({
-        id: e.id,
+        id: e.data_minima?.id || e.id,
         cedula: e.cedula || "",
         codigo: e.codigo_estudiante || "",
         nombres: splitNombres(e.nombres || "").nombres,
@@ -297,7 +298,7 @@ export async function putStore(payload = {}) {
         nombres: d.nombre || d.name || "",
         rol: d.rol || d.role || "docente",
       };
-      if (d.password) record.password_hash = hashPassword(d.password);
+      if (d.password && d.password !== 'saved') record.password_hash = hashPassword(d.password);
       const { error } = await supabase.from("docentes_sistema").upsert(record, { onConflict: "email" });
       if (error) errors.push(`docente ${record.email}: ${error.message}`);
     }
@@ -393,6 +394,29 @@ export async function putStore(payload = {}) {
       }
     }
 
+    // 4.5. Actividades — guardar en actividades_evaluacion para FK de notas
+    for (const c of payload.savedConfigs) {
+      const cfgUuid = cfgIdMap.get(c.id) || ensureUuid(c.id);
+      if (!keepCfgIds.has(cfgUuid)) continue;
+      const acts = (c.activities || []);
+      if (acts.length === 0) continue;
+      await supabase.from("actividades_evaluacion").delete().eq("config_id", cfgUuid);
+      const rows = acts.map((a, i) => ({
+        id: ensureUuid(a.id),
+        config_id: cfgUuid,
+        componente: a.component || a.componente || "ACD",
+        nombre: a.name || a.nombre || "",
+        descripcion: a.desc || a.descripcion || "",
+        puntaje_maximo: a.maxScore != null ? Number(a.maxScore) : 0,
+        rac_id: a.racId ? ensureUuid(a.racId) : (a.rac_id ? ensureUuid(a.rac_id) : null),
+        raau_id: a.raauId ? ensureUuid(a.raauId) : (a.raau_id ? ensureUuid(a.raau_id) : null),
+        procedimiento: a.procedure || a.procedimiento || "",
+        orden: i,
+      }));
+      const { error } = await supabase.from("actividades_evaluacion").insert(rows);
+      if (error) errors.push(`actividades ${cfgUuid}: ${error.message}`);
+    }
+
     // 5. Notas (array de {studentId, activityId, score})
     if (payload.gradesByConfig && typeof payload.gradesByConfig === "object") {
       for (const [origCfgId, arr] of Object.entries(payload.gradesByConfig)) {
@@ -423,9 +447,15 @@ export async function putStore(payload = {}) {
       }
     }
 
-    // Eliminar configs que ya no están
+    // Eliminar configs que ya no están (con limpieza en cascada)
     for (const oldId of existingCfgIds) {
-      if (!keepCfgIds.has(oldId)) await supabase.from("configuraciones_pao").delete().eq("id", oldId);
+      if (!keepCfgIds.has(oldId)) {
+        await supabase.from("notas_estudiantes").delete().eq("config_id", oldId);
+        await supabase.from("estudiantes_configuracion").delete().eq("config_id", oldId);
+        await supabase.from("actividades_evaluacion").delete().eq("config_id", oldId);
+        await supabase.from("resultados_aprendizaje").delete().eq("config_id", oldId);
+        await supabase.from("configuraciones_pao").delete().eq("id", oldId);
+      }
     }
   }
 

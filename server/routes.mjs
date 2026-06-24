@@ -119,17 +119,6 @@ export function createRouter(oasis, db, envWarnings) {
 
     "PUT /api/store": (body) => (db.enabled ? db.putStore(body) : { disabled: true }),
 
-    "POST /api/dev-login": async (body) => {
-      const roleMap = { docente: "DOCENTE", coordinador: "COORDINADOR", admin: "ADMIN" };
-      var roleLabel = "docente";
-      if (body.login === "dev.coordinador") roleLabel = "coordinador";
-      else if (body.login === "dev.admin") roleLabel = "admin";
-      return {
-        roles: [{ codigoCarrera: "001", nombreRol: roleMap[roleLabel] || "DOCENTE" }],
-        perfil: { cedula: "9999999999", apellidos: "Desarrollo", nombres: "Usuario " + roleLabel, email: body.login + "@espoch.edu.ec" },
-      };
-    },
-
     "POST /api/db-login": async (body) => {
       if (!db.enabled) return { disabled: true };
       if (!body.login || !body.password) throw new HttpError("Debe ingresar usuario y contraseña.", 400);

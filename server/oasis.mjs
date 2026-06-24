@@ -129,12 +129,7 @@ export async function getFacultades() {
 
 export async function getUsuarioFacultad(login, password) {
   if (!OASIS_USER) {
-    return {
-      cedula: "0600000000",
-      apellidos: "USUARIO DE PRUEBA",
-      nombres: "MODO DEV",
-      email: login || "dev@espoch.edu.ec",
-    };
+    throw new Error("OASIS no disponible.");
   }
   const r = (await callSoap("Seguridad", "GetUsuarioFacultad", { login, password })) || {};
   return {
@@ -147,17 +142,9 @@ export async function getUsuarioFacultad(login, password) {
 
 export async function login(usuario, password) {
   if (!OASIS_USER) {
-    const isCoordinador = /coordinador|admin/i.test(usuario) || usuario === "ppaguay@espoch.edu.ec";
-    const roleLabel = isCoordinador ? "COORDINADOR" : "DOCENTE";
-    return {
-      roles: [{ codigoCarrera: "ITIO", nombreRol: roleLabel }],
-      perfil: {
-        cedula: "0600000000",
-        apellidos: "USUARIO DE PRUEBA",
-        nombres: "MODO DEV",
-        email: usuario || "dev@espoch.edu.ec",
-      },
-    };
+    const e = new Error("Servicio OASIS no disponible. Usa tu correo y contraseña institucional o contacta al coordinador.");
+    e.offline = true;
+    throw e;
   }
   let r;
   try {

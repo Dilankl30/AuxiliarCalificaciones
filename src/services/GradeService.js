@@ -1,5 +1,3 @@
-import * as oasisApi from "./oasisApi";
-
 /**
  * Servicio especializado en la gestión de calificaciones, cálculos de totales y sincronización de notas.
  */
@@ -19,16 +17,15 @@ export const GradeService = {
   },
 
   /**
-   * Establece la nota de un estudiante y la sincroniza con Supabase.
+   * Establece la nota de un estudiante en memoria.
    * @param {string} configId - ID de la configuración activa.
    * @param {string} studentId - ID o Cédula del estudiante.
    * @param {string} activityId - ID de la actividad.
    * @param {number|null} score - Puntaje a asignar.
    */
-  async setGrade(configId, studentId, activityId, score) {
+  setGrade(configId, studentId, activityId, score) {
     if (!window.STATE) return;
 
-    // 1. Actualizar estado local
     if (!window.STATE.gradesByConfig) window.STATE.gradesByConfig = {};
     if (!window.STATE.gradesByConfig[configId]) window.STATE.gradesByConfig[configId] = [];
     
@@ -39,13 +36,6 @@ export const GradeService = {
       grades[idx].score = score;
     } else {
       grades.push({ studentId, activityId, score });
-    }
-
-    // 2. Sincronizar con Supabase usando API granular (Fase 5)
-    try {
-      await oasisApi.putNotas(configId, { notas: grades });
-    } catch (e) {
-      console.error("[GradeService] Error sincronizando notas con Supabase:", e);
     }
   },
 

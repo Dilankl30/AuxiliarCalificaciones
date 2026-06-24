@@ -135,11 +135,6 @@ export function putStore(payload) {
   return request("/api/store", { method: "PUT", body: payload });
 }
 
-/** Dev/test login: bypass OASIS. Usar login="dev.docente", "dev.coordinador", o "dev.admin". */
-export function devLogin(usuario, password) {
-  return request("/api/dev-login", { method: "POST", body: { login: usuario, password } });
-}
-
 /** Login verificado contra la base de datos (contraseña hasheada). */
 export function loginDb(usuario, password) {
   return request("/api/db-login", { method: "POST", body: { login: usuario, password } });
@@ -157,6 +152,21 @@ export function importNominaAndSave(configId, params) {
   return request(`/api/configuraciones/${configId}/estudiantes/nomina`, {
     method: "POST", body: params,
   });
+}
+
+/** Guarda notas de una configuración (upsert). */
+export function putNotas(configId, data) {
+  return request(`/api/configuraciones/${configId}/notas`, { method: "PUT", body: data });
+}
+
+/** Guarda actividades de una configuración (upsert). */
+export function putActividades(configId, data) {
+  return request(`/api/configuraciones/${configId}/actividades`, { method: "PUT", body: data });
+}
+
+/** Guarda resultados de aprendizaje (RAC/RAAU) de una configuración. */
+export function putResultados(configId, data) {
+  return request(`/api/configuraciones/${configId}/resultados`, { method: "PUT", body: data });
 }
 
 export const apiBaseUrl = API_BASE_URL;

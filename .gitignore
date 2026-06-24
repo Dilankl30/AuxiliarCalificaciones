@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # Logs
 logs
 *.log
@@ -15,13 +14,13 @@ dist
 dist-ssr
 *.local
 
-# Variables de entorno (credenciales OASIS / BD) — nunca commitear
+# Variables de entorno
 .env
 server/.env
 backend/.env
 backend/logs/
 
-# Session memory (generated per-session)
+# Session memory
 memory.json
 
 # Temp scripts
@@ -38,6 +37,3 @@ supabase/.temp/
 *.njsproj
 *.sln
 *.sw?
-=======
-Nothing should be ignored based on the provided file changes, as they only include source files (.js, .html) without any build artifacts, dependencies, or temporary files.
->>>>>>> origin/dev-dilan

@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: assistant-grades-api
+    env: node
+    buildCommand: npm install
+    startCommand: node server/index.mjs
+    envVars:
+      - key: PORT
+        value: 3001
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: OASIS_USER
+        sync: false
+      - key: OASIS_PASS
+        sync: false
+      - key: OASIS_BASE
+        value: http://swoasis.espoch.edu.ec/OASis/OAS_Interop
