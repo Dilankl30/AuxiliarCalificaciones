@@ -345,7 +345,6 @@ export function initLegacyRuntime() {
       }
     }
     STATE.activeConfigId = configId;
-    save();
     return cargarPaoActivo();
   }
 
